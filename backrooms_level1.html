@@ -38,8 +38,8 @@ p{line-height:1.65;color:#ccc;font-size:14px}button{background:#c7b95c;border:0;
 <p><b>目标：</b>在空间中探索，找到出口。注意观察环境，尽量不要迷失方向。</p>
 <p><b>操作：</b>WASD / 圆形摇杆移动 · 鼠标或滑动屏幕环顾 · Shift / 疾跑按钮冲刺 · F 手电筒</p>
 <label id="sensitivityControl">屏幕视角灵敏度 <input id="sensitivity" type="range" min="0.003" max="0.014" step="0.0005" value="0.008"><span id="sensitivityValue">0.008</span></label>
-<div id="levelChoices"><button class="selected" data-level="0">LEVEL 1 · 黄色办公区</button><button data-level="1">LEVEL 2 · 荒废办公区</button><button data-level="2">LEVEL 3 · 潮湿管道区</button></div><button id="start">进入 Level 1</button><p style="font-size:11px;color:#888">已加入环境音与脚步声。首次进入后浏览器将启动声音。</p></div></div>
-<canvas id="snow" width="160" height="90"></canvas><div id="hud"><div id="cross"></div><div id="vignette"></div><div id="status">NO SIGNAL · 00:00</div><div id="hint">WASD 移动　SHIFT 奔跑　F 手电筒</div></div>
+<button id="start">进入 Level 1</button><p style="font-size:11px;color:#888">初始进入 Level 1。只能寻找地图中的异常入口前往其他层级。</p></div></div>
+<canvas id="snow" width="160" height="90"></canvas><div id="hud"><div id="cross"></div><div id="vignette"></div><div id="status">NO SIGNAL · 00:00</div><div id="hint">WASD 移动　SHIFT 奔跑　F 手电筒　寻找异常入口</div></div>
 <div id="mobile"><div id="joystick" aria-label="移动摇杆"><div id="joyKnob"></div></div><button id="sprintBtn">疾跑</button><button id="mflash">手电筒</button></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
@@ -96,15 +96,46 @@ for(const[x,z]of[[-30,-14],[-4,-4],[20,19],[29,-18],[-24,15],[7,-25]])box(.55,H,
 for(let i=0;i<35;i++){const x=(Math.random()-.5)*62,z=(Math.random()-.5)*62;if(Math.hypot(x,z)<5)continue;const stain=new THREE.Mesh(new THREE.CircleGeometry(.25+Math.random()*.65,16),new THREE.MeshBasicMaterial({color:0x514c35,transparent:true,opacity:.09,depthWrite:false}));stain.rotation.x=-Math.PI/2;stain.position.set(x,.002,z);scene.add(stain)}
 const exitGroup=new THREE.Group();exitGroup.position.set(33,0,27);scene.add(exitGroup);const door=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.8,.14),new THREE.MeshStandardMaterial({color:0x263b32,roughness:.8}));door.position.y=1.4;exitGroup.add(door);const sign=new THREE.Mesh(new THREE.BoxGeometry(1.3,.32,.08),new THREE.MeshStandardMaterial({color:0x18251e,emissive:0x123b20,emissiveIntensity:1.5}));sign.position.set(0,3.05,0);exitGroup.add(sign);
 const signText=document.createElement('canvas');signText.width=256;signText.height=64;const st=signText.getContext('2d');st.fillStyle='#b9e7b2';st.font='bold 34px Arial';st.textAlign='center';st.fillText('EXIT',128,44);const signTex=new THREE.CanvasTexture(signText),signFace=new THREE.Mesh(new THREE.PlaneGeometry(1.1,.27),new THREE.MeshBasicMaterial({map:signTex,transparent:true}));signFace.position.set(0,3.05,.05);exitGroup.add(signFace);const exitLight=new THREE.PointLight(0x63d47d,8,8);exitLight.position.set(0,2.8,1);exitGroup.add(exitLight);
-const levelObjects=[...scene.children];
-const levelGroups=levelObjects.map((obj)=>obj.clone(true));
-for(const obj of levelObjects)scene.remove(obj);
-const levelStyles=[{name:"LEVEL 1 · HABITABLE ZONE",fog:0x77745b,density:.017,exposure:1.05,light:1,wall:0xffffff,floor:0xffffff},{name:"LEVEL 2 · ABANDONED OFFICE",fog:0x66684d,density:.021,exposure:.92,light:.78,wall:0xc4c99b,floor:0xb9b58a},{name:"LEVEL 3 · DAMP SERVICE TUNNELS",fog:0x394b4b,density:.029,exposure:.78,light:.52,wall:0x9bb0a8,floor:0x899b9a}];
-const levelRoots=levelGroups.map((root,index)=>{const group=new THREE.Group();group.add(root);group.traverse(o=>{if(o.isMesh&&o.material){o.material=o.material.clone();if(o.material.color){if(index===1)o.material.color.multiply(new THREE.Color(0xc4c99b));if(index===2)o.material.color.multiply(new THREE.Color(0x9bb0a8))}}if(o.isLight&&o.type==="PointLight")o.intensity*=levelStyles[index].light});scene.add(group);return group});
-let activeLevel=0;levelRoots.forEach((g,i)=>g.visible=i===0);
-const snowCanvas=document.getElementById("snow"),snowCtx=snowCanvas.getContext("2d"),snowPixels=snowCtx.createImageData(160,90);let snowUntil=0,snowStrength=0;
-function switchLevel(index){if(index<0||index>=levelRoots.length||index===activeLevel)return;activeLevel=index;levelRoots.forEach((g,i)=>g.visible=i===index);const style=levelStyles[index];scene.fog.color.setHex(style.fog);scene.fog.density=style.density;scene.background.setHex(style.fog);renderer.toneMappingExposure=style.exposure;camera.position.set(0,1.68,0);camera.rotation.set(0,0,0);lookYaw=targetYaw=lookPitch=targetPitch=0;lookInitialized=false;won=false;elapsed=0;document.querySelector("#panel h1").textContent=`LEVEL ${index+1}`;document.querySelector(".sub").textContent=style.name;document.getElementById("start").textContent=`进入 Level ${index+1}`;snowUntil=performance.now()+1450;snowStrength=1;overlay.style.display="flex";if(controls.isLocked)controls.unlock();}
-document.querySelectorAll("#levelChoices button").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll("#levelChoices button").forEach(b=>b.classList.toggle("selected",b===btn));if(Number(btn.dataset.level)!==activeLevel)switchLevel(Number(btn.dataset.level));}));
+const levelStyles=[
+ {name:"LEVEL 1 · HABITABLE ZONE",fog:0x77745b,density:.017,exposure:1.05,light:1},
+ {name:"LEVEL 2 · ABANDONED OFFICE",fog:0x66684d,density:.023,exposure:.92,light:.78},
+ {name:"LEVEL 3 · DAMP SERVICE TUNNELS",fog:0x394b4b,density:.031,exposure:.78,light:.55}
+];
+let activeLevel=0;
+const snowCanvas=document.getElementById("snow"),snowCtx=snowCanvas.getContext("2d"),snowPixels=snowCtx.createImageData(160,90);let snowUntil=0;
+const portals=[
+ {from:0,to:1,x:10,z:30,spawn:{x:-20,z:34},color:0x9bdc82,label:"LEVEL 2"},
+ {from:1,to:2,x:-20,z:30,spawn:{x:30,z:-6},color:0x79cbd5,label:"LEVEL 3"},
+ {from:2,to:0,x:30,z:-10,spawn:{x:13,z:30},color:0xd8c66d,label:"LEVEL 1"}
+];
+const portalMeshes=[];
+for(const data of portals){
+ const group=new THREE.Group();group.position.set(data.x,0,data.z);scene.add(group);
+ const frameMat=new THREE.MeshStandardMaterial({color:0x39382d,roughness:.72,metalness:.15});
+ const glowMat=new THREE.MeshBasicMaterial({color:data.color,transparent:true,opacity:.62,side:THREE.DoubleSide});
+ const sideGeo=new THREE.BoxGeometry(.16,3.1,.2),topGeo=new THREE.BoxGeometry(1.75,.18,.2);
+ for(const x of [-.8,.8]){const post=new THREE.Mesh(sideGeo,frameMat);post.position.set(x,1.55,0);group.add(post)}
+ const top=new THREE.Mesh(topGeo,frameMat);top.position.set(0,3.1,0);group.add(top);
+ const field=new THREE.Mesh(new THREE.PlaneGeometry(1.42,2.85),glowMat);field.position.set(0,1.52,-.08);group.add(field);
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.55,.035,8,32),new THREE.MeshBasicMaterial({color:data.color}));ring.position.set(0,1.5,.035);group.add(ring);
+ const glow=new THREE.PointLight(data.color,5,8);glow.position.set(0,1.6,1.1);group.add(glow);
+ const labelCanvas=document.createElement("canvas");labelCanvas.width=256;labelCanvas.height=64;const lc=labelCanvas.getContext("2d");lc.fillStyle="#ffffff";lc.font="bold 28px Arial";lc.textAlign="center";lc.fillText("ANOMALY · "+data.label,128,42);
+ const label=new THREE.Mesh(new THREE.PlaneGeometry(1.65,.38),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(labelCanvas),transparent:true}));label.position.set(0,3.42,.02);group.add(label);
+ portalMeshes.push({group,data,glow,field});
+}
+function switchLevel(index){
+ if(index<0||index>=levelStyles.length||index===activeLevel)return;
+ activeLevel=index;const style=levelStyles[index];
+ scene.fog.color.setHex(style.fog);scene.fog.density=style.density;scene.background.setHex(style.fog);renderer.toneMappingExposure=style.exposure;
+ lights.forEach(o=>{o.base=23*style.light;o.light.intensity=o.base});
+ const destination=portals.find(p=>p.to===index);
+ if(destination)camera.position.set(destination.spawn.x,1.68,destination.spawn.z);
+ lookYaw=targetYaw=lookPitch=targetPitch=0;lookInitialized=false;won=false;elapsed=0;stepClock=0;
+ document.querySelector("#panel h1").textContent=style.name.split(" · ")[0];document.querySelector(".sub").textContent=style.name;
+ document.querySelector("#panel p").textContent="你穿过了空间异常。周围的结构已经发生变化，寻找下一个异常入口继续前进。";
+ document.getElementById("start").textContent="继续探索";snowUntil=performance.now()+1550;
+ overlay.style.display="none";if(controls.isLocked)controls.unlock();
+}
 const flashlight=new THREE.SpotLight(0xfff0ce,0,22,Math.PI/7,.35,1.5);flashlight.position.set(0,0,0);flashlight.target.position.set(0,0,-1);camera.add(flashlight);camera.add(flashlight.target);scene.add(camera);
 let flashOn=false,won=false;function toggleFlash(){flashOn=!flashOn;flashlight.intensity=flashOn?85:0}addEventListener('keydown',e=>{if(e.code==='KeyF')toggleFlash()});document.getElementById('mflash').onclick=toggleFlash;
 // Touch look: disable browser gestures on the render surface and smooth camera rotation.
@@ -150,11 +181,13 @@ function blocked(nx,nz){const r=.34;if(Math.abs(nx)>35.4||Math.abs(nz)>35.4)retu
 function animate(now){requestAnimationFrame(animate);if(now<snowUntil){const d=snowPixels.data;for(let i=0;i<d.length;i+=4){const n=Math.random()*255;d[i]=d[i+1]=d[i+2]=n;d[i+3]=Math.random()<.18?255:Math.random()*150}snowCtx.putImageData(snowPixels,0,0);snowCanvas.style.opacity=String(Math.min(1,(snowUntil-now)/250)*.88)}else{snowCanvas.style.opacity="0";snowStrength=0}const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt;
 if(lookInitialized&&matchMedia('(pointer:coarse)').matches){const blend=1-Math.exp(-22*dt);lookYaw+=(targetYaw-lookYaw)*blend;lookPitch+=(targetPitch-lookPitch)*blend;camera.rotation.order='YXZ';camera.rotation.y=lookYaw;camera.rotation.x=lookPitch}
 lights.forEach(o=>{if(o.flickerLeft<=0&&elapsed>=o.nextFlicker){o.flickerLeft=.07+Math.random()*.09;o.nextFlicker=elapsed+14+Math.random()*24}let flicker=1;if(o.flickerLeft>0){o.flickerLeft-=dt;flicker=Math.random()<.55?.22:.62}o.light.intensity=o.base*flicker*(1+.008*Math.sin(elapsed*1.7+o.phase))});
+portalMeshes.forEach(({data,glow,field})=>{const pulse=.5+.5*Math.sin(elapsed*2.4+data.x);glow.intensity=3.5+pulse*2.5;field.material.opacity=.42+pulse*.22});
 if(controls.isLocked||matchMedia('(pointer:coarse)').matches){const sprinting=keys.ShiftLeft||keys.ShiftRight||sprintTouch,speed=sprinting?6.1:3.25,forward=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)+joyY)),side=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+joyX)),len=Math.hypot(forward,side)||1,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0)),dx=(dir.x*forward+right.x*side)/len*speed*dt,dz=(dir.z*forward+right.z*side)/len*speed*dt,p=camera.position;const moving=Math.hypot(forward,side)>.12;if(!blocked(p.x+dx,p.z))p.x+=dx;if(!blocked(p.x,p.z+dz))p.z+=dz;
 if(moving){bobPhase+=dt*(sprinting?14:9);stepClock-=dt;if(stepClock<=0){playFootstep(sprinting);stepClock=sprinting?.31:.49}}else{stepClock=Math.min(stepClock,.12)}
 const bob=moving?Math.abs(Math.sin(bobPhase))*(sprinting?.075:.035):0;p.y=1.68+bob;
 const targetFov=sprinting&&moving?84:76;camera.fov+=(targetFov-camera.fov)*(1-Math.exp(-7*dt));camera.updateProjectionMatrix();
-if(Math.hypot(p.x-33,p.z-27)<2.1){won=true;overlay.style.display='flex';document.querySelector('#panel h1').textContent='ESCAPED';document.querySelector('.sub').textContent='LEVEL 1 · EXIT FOUND';document.querySelector('#panel p').textContent='你找到了出口，但没有人知道门后面是什么。';document.getElementById('start').textContent='重新探索';document.getElementById('start').onclick=()=>location.reload()}}
+const nearbyPortal=portals.find(portal=>portal.from===activeLevel&&Math.hypot(p.x-portal.x,p.z-portal.z)<1.65);if(nearbyPortal)switchLevel(nearbyPortal.to);
+if(activeLevel===0&&Math.hypot(p.x-33,p.z-27)<2.1){won=true;overlay.style.display='flex';document.querySelector('#panel h1').textContent='ESCAPED';document.querySelector('.sub').textContent='LEVEL 1 · EXIT FOUND';document.querySelector('#panel p').textContent='你找到了出口，但没有人知道门后面是什么。';document.getElementById('start').textContent='重新探索';document.getElementById('start').onclick=()=>location.reload()}}
 const mins=Math.floor(elapsed/60).toString().padStart(2,'0'),secs=Math.floor(elapsed%60).toString().padStart(2,'0');status.textContent=`NO SIGNAL · ${mins}:${secs} · ${flashOn?'FLASHLIGHT ON':'FLASHLIGHT OFF'}`;renderer.render(scene,camera)}
 requestAnimationFrame(animate);addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script></body></html>
