@@ -1,6 +1,7 @@
 #include <android_native_app_glue.h>
 #include <android/log.h>
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <android/input.h>
 #include <cmath>
@@ -46,7 +47,7 @@ struct Engine {
 };
 static GLuint shader(GLenum type,const char*src){GLuint s=glCreateShader(type);glShaderSource(s,1,&src,nullptr);glCompileShader(s);GLint ok=0;glGetShaderiv(s,GL_COMPILE_STATUS,&ok);if(!ok){char log[1024];glGetShaderInfoLog(s,sizeof(log),nullptr,log);LOGE("shader: %s",log);}return s;}
 static bool initGL(Engine&e){
- const EGLint attrs[]={EGL_RENDERABLE_TYPE,EGL_OPENGL_ES3_BIT,EGL_SURFACE_TYPE,EGL_WINDOW_BIT,EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_DEPTH_SIZE,16,EGL_NONE};
+ const EGLint attrs[]={EGL_RENDERABLE_TYPE,EGL_OPENGL_ES3_BIT_KHR,EGL_SURFACE_TYPE,EGL_WINDOW_BIT,EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_DEPTH_SIZE,16,EGL_NONE};
  e.display=eglGetDisplay(EGL_DEFAULT_DISPLAY);if(e.display==EGL_NO_DISPLAY||!eglInitialize(e.display,nullptr,nullptr))return false;
  EGLConfig cfg;EGLint count;eglChooseConfig(e.display,attrs,&cfg,1,&count);if(!count)return false;
  EGLint fmt;eglGetConfigAttrib(e.display,cfg,EGL_NATIVE_VISUAL_ID,&fmt);ANativeWindow_setBuffersGeometry(e.app->window,0,0,fmt);
@@ -113,4 +114,4 @@ static int32_t input(android_app*app,AInputEvent*ev){
  return 1;
 }
 static void cmd(android_app*app,int32_t c){Engine&e=*static_cast<Engine*>(app->userData);if(c==APP_CMD_INIT_WINDOW&&app->window){if(initGL(e))LOGI("OpenGL ES renderer ready");else LOGE("OpenGL initialization failed");}else if(c==APP_CMD_TERM_WINDOW){if(e.display!=EGL_NO_DISPLAY){eglMakeCurrent(e.display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);if(e.context!=EGL_NO_CONTEXT)eglDestroyContext(e.display,e.context);if(e.surface!=EGL_NO_SURFACE)eglDestroySurface(e.display,e.surface);eglTerminate(e.display);}e.display=EGL_NO_DISPLAY;e.surface=EGL_NO_SURFACE;e.context=EGL_NO_CONTEXT;}else if(c==APP_CMD_WINDOW_RESIZED&&e.display!=EGL_NO_DISPLAY){eglQuerySurface(e.display,e.surface,EGL_WIDTH,&e.width);eglQuerySurface(e.display,e.surface,EGL_HEIGHT,&e.height);}}
-void android_main(android_app*app){app_dummy();Engine e;e.app=app;app->userData=&e;app->onAppCmd=cmd;app->onInputEvent=input;int events;android_poll_source*source;while(e.running){while(ALooper_pollAll(e.display==EGL_NO_DISPLAY?-1:0,nullptr,&events,(void**)&source)>=0){if(source)source->process(app,source);if(app->destroyRequested){e.running=false;break;}}if(e.display!=EGL_NO_DISPLAY&&e.surface!=EGL_NO_SURFACE){static auto last=std::chrono::steady_clock::now();auto now=std::chrono::steady_clock::now();float dt=std::chrono::duration<float>(now-last).count();last=now;render(e,std::min(dt,.05f));}}}
+extern "C" void android_main(android_app*app){app_dummy();Engine e;e.app=app;app->userData=&e;app->onAppCmd=cmd;app->onInputEvent=input;int events;android_poll_source*source;while(e.running){while(ALooper_pollAll(e.display==EGL_NO_DISPLAY?-1:0,nullptr,&events,(void**)&source)>=0){if(source)source->process(app,source);if(app->destroyRequested){e.running=false;break;}}if(e.display!=EGL_NO_DISPLAY&&e.surface!=EGL_NO_SURFACE){static auto last=std::chrono::steady_clock::now();auto now=std::chrono::steady_clock::now();float dt=std::chrono::duration<float>(now-last).count();last=now;render(e,std::min(dt,.05f));}}}
