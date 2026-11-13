@@ -9,9 +9,58 @@
 #include <algorithm>
 #include <cstdint>
 #include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,"Backrooms",__VA_ARGS__)
+
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,"Backrooms",__VA_ARGS__)
+
+// Crash reports are written to Android's app-specific external files directory:
+// Android/data/com.hivber.backrooms/files/backrooms-crash.log
+static int gCrashFd = -1;
+static void crashWrite(const char* data, size_t size) {
+ if (gCrashFd >= 0) { (void)write(gCrashFd, data, size); (void)fsync(gCrashFd); }
+}
+static void writeHex(uintptr_t value) {
+ char out[2 + sizeof(uintptr_t) * 2 + 2]; const char digits[]="0123456789abcdef";
+ size_t n=0; out[n++]='0'; out[n++]='x';
+ bool started=false;
+ for (int shift=(int)(sizeof(uintptr_t)*8)-4; shift>=0; shift-=4) {
+  unsigned v=(unsigned)((value>>shift)&0xf);
+  if(v || started || shift==0){out[n++]=digits[v];started=true;}
+ }
+ out[n++]='\\n'; crashWrite(out,n);
+}
+static void nativeCrashHandler(int sig, siginfo_t* info, void*) {
+ const char head[]="\\n=== BACKROOMS NATIVE CRASH ===\\nSignal: ";
+ crashWrite(head,sizeof(head)-1);
+ char num[16]; size_t n=0; unsigned v=(unsigned)(sig<0?-sig:sig);
+ do { num[n++]=(char)('0'+v%10); v/=10; } while(v && n<sizeof(num));
+ for(size_t i=0;i<n/2;i++){char t=num[i];num[i]=num[n-1-i];num[n-1-i]=t;}
+ crashWrite(num,n); const char addr[]="\\nFault address: "; crashWrite(addr,sizeof(addr)-1);
+ writeHex((uintptr_t)(info?info->si_addr:nullptr));
+ const char end[]="Process terminated after native fatal signal.\\n";
+ crashWrite(end,sizeof(end)-1);
+ _exit(128+sig);
+}
+static void installCrashLogging(const char* externalPath) {
+ if(externalPath && externalPath[0]) {
+  char path[1024]; std::snprintf(path,sizeof(path),"%s/backrooms-crash.log",externalPath);
+  gCrashFd=open(path,O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC,0600);
+  if(gCrashFd>=0){const char start[]="\\n=== BACKROOMS SESSION START ===\\n";(void)write(gCrashFd,start,sizeof(start)-1);(void)fsync(gCrashFd);LOGI("Crash log: %s",path);}
+  else LOGE("Cannot open crash log, errno=%d",errno);
+ }
+ struct sigaction action{}; action.sa_sigaction=nativeCrashHandler; sigemptyset(&action.sa_mask); action.sa_flags=SA_SIGINFO|SA_RESETHAND;
+ sigaction(SIGSEGV,&action,nullptr);sigaction(SIGABRT,&action,nullptr);sigaction(SIGBUS,&action,nullptr);
+ sigaction(SIGFPE,&action,nullptr);sigaction(SIGILL,&action,nullptr);
+ std::set_terminate([](){const char msg[]="\\n=== C++ TERMINATE (uncaught exception) ===\\n";crashWrite(msg,sizeof(msg)-1);_exit(134);});
+}
 
 struct V3 { float x,y,z; };
 static V3 add(V3 a,V3 b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
@@ -114,4 +163,4 @@ static int32_t input(android_app*app,AInputEvent*ev){
  return 1;
 }
 static void cmd(android_app*app,int32_t c){Engine&e=*static_cast<Engine*>(app->userData);if(c==APP_CMD_INIT_WINDOW&&app->window){if(initGL(e))LOGI("OpenGL ES renderer ready");else LOGE("OpenGL initialization failed");}else if(c==APP_CMD_TERM_WINDOW){if(e.display!=EGL_NO_DISPLAY){eglMakeCurrent(e.display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);if(e.context!=EGL_NO_CONTEXT)eglDestroyContext(e.display,e.context);if(e.surface!=EGL_NO_SURFACE)eglDestroySurface(e.display,e.surface);eglTerminate(e.display);}e.display=EGL_NO_DISPLAY;e.surface=EGL_NO_SURFACE;e.context=EGL_NO_CONTEXT;}else if(c==APP_CMD_WINDOW_RESIZED&&e.display!=EGL_NO_DISPLAY){eglQuerySurface(e.display,e.surface,EGL_WIDTH,&e.width);eglQuerySurface(e.display,e.surface,EGL_HEIGHT,&e.height);}}
-extern "C" void android_main(android_app*app){Engine e;e.app=app;app->userData=&e;app->onAppCmd=cmd;app->onInputEvent=input;int events;android_poll_source*source;while(e.running){while(ALooper_pollOnce(e.display==EGL_NO_DISPLAY?-1:0,nullptr,&events,(void**)&source)>=0){if(source)source->process(app,source);if(app->destroyRequested){e.running=false;break;}}if(e.display!=EGL_NO_DISPLAY&&e.surface!=EGL_NO_SURFACE){static auto last=std::chrono::steady_clock::now();auto now=std::chrono::steady_clock::now();float dt=std::chrono::duration<float>(now-last).count();last=now;render(e,std::min(dt,.05f));}}}
+extern "C" void android_main(android_app*app){installCrashLogging(app&&app->activity?app->activity->externalDataPath:nullptr);LOGI("Native engine starting");Engine e;e.app=app;app->userData=&e;app->onAppCmd=cmd;app->onInputEvent=input;int events;android_poll_source*source;while(e.running){while(ALooper_pollOnce(e.display==EGL_NO_DISPLAY?-1:0,nullptr,&events,(void**)&source)>=0){if(source)source->process(app,source);if(app->destroyRequested){e.running=false;break;}}if(e.display!=EGL_NO_DISPLAY&&e.surface!=EGL_NO_SURFACE){static auto last=std::chrono::steady_clock::now();auto now=std::chrono::steady_clock::now();float dt=std::chrono::duration<float>(now-last).count();last=now;render(e,std::min(dt,.05f));}}}
