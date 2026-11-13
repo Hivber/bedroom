@@ -11,6 +11,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cerrno>
 #include <cstdlib>
 #include <exception>
 #include <fcntl.h>
