@@ -121,11 +121,11 @@ for(const data of portals){
  const glow=new THREE.PointLight(data.color,5,8);glow.position.set(0,1.6,1.1);group.add(glow);
  const labelCanvas=document.createElement("canvas");labelCanvas.width=256;labelCanvas.height=64;const lc=labelCanvas.getContext("2d");lc.fillStyle="#ffffff";lc.font="bold 28px Arial";lc.textAlign="center";lc.fillText("ANOMALY · "+data.label,128,42);
  const label=new THREE.Mesh(new THREE.PlaneGeometry(1.65,.38),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(labelCanvas),transparent:true}));label.position.set(0,3.42,.02);group.add(label);
- portalMeshes.push({group,data,glow,field});
+ group.visible=data.from===activeLevel;portalMeshes.push({group,data,glow,field});
 }
 function switchLevel(index){
  if(index<0||index>=levelStyles.length||index===activeLevel)return;
- activeLevel=index;const style=levelStyles[index];
+ activeLevel=index;portalMeshes.forEach(({group,data})=>group.visible=data.from===index);const style=levelStyles[index];
  scene.fog.color.setHex(style.fog);scene.fog.density=style.density;scene.background.setHex(style.fog);renderer.toneMappingExposure=style.exposure;
  lights.forEach(o=>{o.base=23*style.light;o.light.intensity=o.base});
  const destination=portals.find(p=>p.to===index);
@@ -134,7 +134,7 @@ function switchLevel(index){
  document.querySelector("#panel h1").textContent=style.name.split(" · ")[0];document.querySelector(".sub").textContent=style.name;
  document.querySelector("#panel p").textContent="你穿过了空间异常。周围的结构已经发生变化，寻找下一个异常入口继续前进。";
  document.getElementById("start").textContent="继续探索";snowUntil=performance.now()+1550;
- overlay.style.display="none";if(controls.isLocked)controls.unlock();
+ overlay.style.display="none";
 }
 const flashlight=new THREE.SpotLight(0xfff0ce,0,22,Math.PI/7,.35,1.5);flashlight.position.set(0,0,0);flashlight.target.position.set(0,0,-1);camera.add(flashlight);camera.add(flashlight.target);scene.add(camera);
 let flashOn=false,won=false;function toggleFlash(){flashOn=!flashOn;flashlight.intensity=flashOn?85:0}addEventListener('keydown',e=>{if(e.code==='KeyF')toggleFlash()});document.getElementById('mflash').onclick=toggleFlash;
