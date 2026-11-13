@@ -16,8 +16,12 @@ p{line-height:1.65;color:#ccc;font-size:14px}button{background:#c7b95c;border:0;
 #rotateNotice{display:none;position:fixed;inset:0;z-index:10;background:#111;color:#e8dfaa;align-items:center;justify-content:center;text-align:center;padding:28px;box-sizing:border-box}
 #rotateNotice .inner{max-width:320px}#rotateNotice .phone{font-size:56px;display:block;margin-bottom:16px}
 @media (orientation:portrait) and (pointer:coarse){#rotateNotice{display:flex}}
-#mobile{display:none;position:fixed;bottom:18px;left:15px;z-index:4;gap:8px}#mobile button{margin:0;padding:15px;background:#222a;color:#eee;border:1px solid #aaa8;letter-spacing:0;touch-action:none}
-@media(pointer:coarse){#mobile{display:flex}#hint{bottom:95px}}
+#mobile{display:none;position:fixed;left:18px;bottom:20px;z-index:4;align-items:flex-end;gap:14px;touch-action:none;user-select:none}
+#joystick{width:138px;height:138px;border-radius:50%;position:relative;background:radial-gradient(circle,#ffffff18 0 42%,#1119 70%);border:2px solid #ffffff70;box-shadow:0 4px 18px #0008;touch-action:none}
+#joystick:before{content:"";position:absolute;inset:22%;border:1px solid #ffffff35;border-radius:50%}
+#joyKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;background:linear-gradient(145deg,#eee9,#777b);border:2px solid #fff9;box-shadow:0 3px 10px #0009;pointer-events:none}
+#mobile button{margin:0;padding:13px 15px;background:#222b;color:#eee;border:1px solid #ffffff70;border-radius:12px;touch-action:none;letter-spacing:0;font-size:14px}
+@media(pointer:coarse){#mobile{display:flex}#hint{bottom:170px}}
 </style>
 </head>
 <body>
@@ -28,7 +32,7 @@ p{line-height:1.65;color:#ccc;font-size:14px}button{background:#c7b95c;border:0;
 <p><b>操作：</b>WASD 移动 · 鼠标环顾 · Shift 奔跑 · F 手电筒 · Esc 释放鼠标</p>
 <button id="start">进入 Level 1</button><p style="font-size:11px;color:#888">建议使用电脑浏览器并戴上耳机。移动设备可使用屏幕方向键。</p></div></div>
 <div id="hud"><div id="cross"></div><div id="vignette"></div><div id="status">NO SIGNAL · 00:00</div><div id="hint">WASD 移动　SHIFT 奔跑　F 手电筒</div></div>
-<div id="mobile"><button data-k="w">▲</button><button data-k="a">◀</button><button data-k="s">▼</button><button data-k="d">▶</button><button id="mflash">灯</button></div>
+<div id="mobile"><div id="joystick" aria-label="移动摇杆"><div id="joyKnob"></div></div><button id="mflash">手电筒</button></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
@@ -81,7 +85,7 @@ renderer.domElement.addEventListener('pointermove',e=>{
  for(const sample of events){
   const dx=sample.clientX-lastTouchX,dy=sample.clientY-lastTouchY;
   lastTouchX=sample.clientX;lastTouchY=sample.clientY;
-  targetYaw-=dx*.0032;targetPitch=Math.max(-1.42,Math.min(1.42,targetPitch-dy*.0032));
+  const touchSensitivity=.0054;targetYaw-=dx*touchSensitivity;targetPitch=Math.max(-1.42,Math.min(1.42,targetPitch-dy*touchSensitivity));
  }
 });
 function endTouchLook(e){if(mobileLookPointer===e.pointerId){mobileLookPointer=null;try{renderer.domElement.releasePointerCapture(e.pointerId)}catch(err){}}}
@@ -89,12 +93,19 @@ renderer.domElement.addEventListener('pointerup',endTouchLook);
 renderer.domElement.addEventListener('pointercancel',endTouchLook);
 renderer.domElement.addEventListener('lostpointercapture',endTouchLook);
 const keys={};addEventListener('keydown',e=>keys[e.code]=true);addEventListener('keyup',e=>keys[e.code]=false);
-document.querySelectorAll('[data-k]').forEach(b=>{const code={w:'KeyW',a:'KeyA',s:'KeyS',d:'KeyD'}[b.dataset.k];b.addEventListener('pointerdown',e=>{e.preventDefault();keys[code]=true});['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>keys[code]=false))});
+const joystick=document.getElementById('joystick'),joyKnob=document.getElementById('joyKnob');
+let joyPointer=null,joyX=0,joyY=0;
+function updateJoystick(e){const rect=joystick.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,max=rect.width*.34;let x=e.clientX-cx,y=e.clientY-cy;const len=Math.hypot(x,y);if(len>max){x=x/len*max;y=y/len*max}joyX=x/max;joyY=-y/max;joyKnob.style.transform=`translate(${x}px,${y}px)`}
+function resetJoystick(){joyPointer=null;joyX=0;joyY=0;joyKnob.style.transform='translate(0px,0px)'}
+joystick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(joyPointer!==null)return;joyPointer=e.pointerId;joystick.setPointerCapture(e.pointerId);updateJoystick(e)});
+joystick.addEventListener('pointermove',e=>{if(e.pointerId===joyPointer){e.preventDefault();updateJoystick(e)}});
+['pointerup','pointercancel','lostpointercapture'].forEach(ev=>joystick.addEventListener(ev,e=>{if(e.pointerId===joyPointer)resetJoystick()}));
+
 let elapsed=0,last=performance.now();const status=document.getElementById('status');function blocked(nx,nz){const r=.34;if(Math.abs(nx)>35.4||Math.abs(nz)>35.4)return true;return colliders.some(c=>nx+r>c.x-c.hw&&nx-r<c.x+c.hw&&nz+r>c.z-c.hd&&nz-r<c.z+c.hd)}
 function animate(now){requestAnimationFrame(animate);const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt;
 if(lookInitialized&&matchMedia('(pointer:coarse)').matches){const blend=1-Math.exp(-22*dt);lookYaw+=(targetYaw-lookYaw)*blend;lookPitch+=(targetPitch-lookPitch)*blend;camera.rotation.order='YXZ';camera.rotation.y=lookYaw;camera.rotation.x=lookPitch}
 lights.forEach(o=>{const flick=Math.random()<.012?Math.random()*.12:1;o.light.intensity=o.base*flick*(.94+Math.sin(elapsed*2+o.phase)*.025)});
-if(controls.isLocked||matchMedia('(pointer:coarse)').matches){const speed=keys.ShiftLeft||keys.ShiftRight?5.3:3.15,forward=(keys.KeyW?1:0)-(keys.KeyS?1:0),side=(keys.KeyD?1:0)-(keys.KeyA?1:0),len=Math.hypot(forward,side)||1,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0)),dx=(dir.x*forward+right.x*side)/len*speed*dt,dz=(dir.z*forward+right.z*side)/len*speed*dt,p=camera.position;if(!blocked(p.x+dx,p.z))p.x+=dx;if(!blocked(p.x,p.z+dz))p.z+=dz;p.y=1.68;
+if(controls.isLocked||matchMedia('(pointer:coarse)').matches){const speed=keys.ShiftLeft||keys.ShiftRight?5.3:3.15,forward=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)+joyY)),side=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+joyX)),len=Math.hypot(forward,side)||1,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0)),dx=(dir.x*forward+right.x*side)/len*speed*dt,dz=(dir.z*forward+right.z*side)/len*speed*dt,p=camera.position;if(!blocked(p.x+dx,p.z))p.x+=dx;if(!blocked(p.x,p.z+dz))p.z+=dz;p.y=1.68;
 if(Math.hypot(p.x-33,p.z-27)<2.1){won=true;overlay.style.display='flex';document.querySelector('#panel h1').textContent='ESCAPED';document.querySelector('.sub').textContent='LEVEL 1 · EXIT FOUND';document.querySelector('#panel p').textContent='你找到了出口，但没有人知道门后面是什么。';document.getElementById('start').textContent='重新探索';document.getElementById('start').onclick=()=>location.reload()}}
 const mins=Math.floor(elapsed/60).toString().padStart(2,'0'),secs=Math.floor(elapsed%60).toString().padStart(2,'0');status.textContent=`NO SIGNAL · ${mins}:${secs} · ${flashOn?'FLASHLIGHT ON':'FLASHLIGHT OFF'}`;renderer.render(scene,camera)}
 requestAnimationFrame(animate);addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
