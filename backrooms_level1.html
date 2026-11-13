@@ -63,13 +63,37 @@ const exitGroup=new THREE.Group();exitGroup.position.set(33,0,27);scene.add(exit
 const signText=document.createElement('canvas');signText.width=256;signText.height=64;const st=signText.getContext('2d');st.fillStyle='#b9e7b2';st.font='bold 34px Arial';st.textAlign='center';st.fillText('EXIT',128,44);const signTex=new THREE.CanvasTexture(signText),signFace=new THREE.Mesh(new THREE.PlaneGeometry(1.1,.27),new THREE.MeshBasicMaterial({map:signTex,transparent:true}));signFace.position.set(0,3.05,.05);exitGroup.add(signFace);const exitLight=new THREE.PointLight(0x63d47d,8,8);exitLight.position.set(0,2.8,1);exitGroup.add(exitLight);
 const flashlight=new THREE.SpotLight(0xfff0ce,0,22,Math.PI/7,.35,1.5);flashlight.position.set(0,0,0);flashlight.target.position.set(0,0,-1);camera.add(flashlight);camera.add(flashlight.target);scene.add(camera);
 let flashOn=false,won=false;function toggleFlash(){flashOn=!flashOn;flashlight.intensity=flashOn?85:0}addEventListener('keydown',e=>{if(e.code==='KeyF')toggleFlash()});document.getElementById('mflash').onclick=toggleFlash;
-let mobileLookPointer=null,lastTouchX=0,lastTouchY=0;renderer.domElement.addEventListener('pointerdown',e=>{if(!matchMedia('(pointer:coarse)').matches||overlay.style.display!=='none')return;mobileLookPointer=e.pointerId;lastTouchX=e.clientX;lastTouchY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId)});
-renderer.domElement.addEventListener('pointermove',e=>{if(mobileLookPointer!==e.pointerId)return;const dx=e.clientX-lastTouchX,dy=e.clientY-lastTouchY;lastTouchX=e.clientX;lastTouchY=e.clientY;const euler=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ');euler.y-=dx*.004;euler.x=Math.max(-1.45,Math.min(1.45,euler.x-dy*.004));camera.quaternion.setFromEuler(euler)});
-renderer.domElement.addEventListener('pointerup',e=>{if(mobileLookPointer===e.pointerId)mobileLookPointer=null});renderer.domElement.addEventListener('pointercancel',e=>{if(mobileLookPointer===e.pointerId)mobileLookPointer=null});
+// Touch look: disable browser gestures on the render surface and smooth camera rotation.
+renderer.domElement.style.touchAction='none';
+let mobileLookPointer=null,lastTouchX=0,lastTouchY=0;
+let lookYaw=0,lookPitch=0,targetYaw=0,targetPitch=0,lookInitialized=false;
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+renderer.domElement.addEventListener('pointerdown',e=>{
+ if(!matchMedia('(pointer:coarse)').matches||overlay.style.display!=='none'||mobileLookPointer!==null)return;
+ mobileLookPointer=e.pointerId;lastTouchX=e.clientX;lastTouchY=e.clientY;
+ const rot=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ');
+ lookYaw=targetYaw=rot.y;lookPitch=targetPitch=rot.x;lookInitialized=true;
+ try{renderer.domElement.setPointerCapture(e.pointerId)}catch(err){}
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+ if(mobileLookPointer!==e.pointerId)return;
+ const events=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+ for(const sample of events){
+  const dx=sample.clientX-lastTouchX,dy=sample.clientY-lastTouchY;
+  lastTouchX=sample.clientX;lastTouchY=sample.clientY;
+  targetYaw-=dx*.0032;targetPitch=Math.max(-1.42,Math.min(1.42,targetPitch-dy*.0032));
+ }
+});
+function endTouchLook(e){if(mobileLookPointer===e.pointerId){mobileLookPointer=null;try{renderer.domElement.releasePointerCapture(e.pointerId)}catch(err){}}}
+renderer.domElement.addEventListener('pointerup',endTouchLook);
+renderer.domElement.addEventListener('pointercancel',endTouchLook);
+renderer.domElement.addEventListener('lostpointercapture',endTouchLook);
 const keys={};addEventListener('keydown',e=>keys[e.code]=true);addEventListener('keyup',e=>keys[e.code]=false);
 document.querySelectorAll('[data-k]').forEach(b=>{const code={w:'KeyW',a:'KeyA',s:'KeyS',d:'KeyD'}[b.dataset.k];b.addEventListener('pointerdown',e=>{e.preventDefault();keys[code]=true});['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>keys[code]=false))});
 let elapsed=0,last=performance.now();const status=document.getElementById('status');function blocked(nx,nz){const r=.34;if(Math.abs(nx)>35.4||Math.abs(nz)>35.4)return true;return colliders.some(c=>nx+r>c.x-c.hw&&nx-r<c.x+c.hw&&nz+r>c.z-c.hd&&nz-r<c.z+c.hd)}
-function animate(now){requestAnimationFrame(animate);const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt;lights.forEach(o=>{const flick=Math.random()<.012?Math.random()*.12:1;o.light.intensity=o.base*flick*(.94+Math.sin(elapsed*2+o.phase)*.025)});
+function animate(now){requestAnimationFrame(animate);const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt;
+if(lookInitialized&&matchMedia('(pointer:coarse)').matches){const blend=1-Math.exp(-22*dt);lookYaw+=(targetYaw-lookYaw)*blend;lookPitch+=(targetPitch-lookPitch)*blend;camera.rotation.order='YXZ';camera.rotation.y=lookYaw;camera.rotation.x=lookPitch}
+lights.forEach(o=>{const flick=Math.random()<.012?Math.random()*.12:1;o.light.intensity=o.base*flick*(.94+Math.sin(elapsed*2+o.phase)*.025)});
 if(controls.isLocked||matchMedia('(pointer:coarse)').matches){const speed=keys.ShiftLeft||keys.ShiftRight?5.3:3.15,forward=(keys.KeyW?1:0)-(keys.KeyS?1:0),side=(keys.KeyD?1:0)-(keys.KeyA?1:0),len=Math.hypot(forward,side)||1,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0)).negate(),dx=(dir.x*forward+right.x*side)/len*speed*dt,dz=(dir.z*forward+right.z*side)/len*speed*dt,p=camera.position;if(!blocked(p.x+dx,p.z))p.x+=dx;if(!blocked(p.x,p.z+dz))p.z+=dz;p.y=1.68;
 if(Math.hypot(p.x-33,p.z-27)<2.1){won=true;overlay.style.display='flex';document.querySelector('#panel h1').textContent='ESCAPED';document.querySelector('.sub').textContent='LEVEL 1 · EXIT FOUND';document.querySelector('#panel p').textContent='你找到了出口，但没有人知道门后面是什么。';document.getElementById('start').textContent='重新探索';document.getElementById('start').onclick=()=>location.reload()}}
 const mins=Math.floor(elapsed/60).toString().padStart(2,'0'),secs=Math.floor(elapsed%60).toString().padStart(2,'0');status.textContent=`NO SIGNAL · ${mins}:${secs} · ${flashOn?'FLASHLIGHT ON':'FLASHLIGHT OFF'}`;renderer.render(scene,camera)}
